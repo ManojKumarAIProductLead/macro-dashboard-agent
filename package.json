@@ -1,0 +1,35 @@
+{
+  "name": "macro-dashboard-agent",
+  "version": "1.0.0",
+  "description": "AI-powered macro signal dashboard for India portfolio rebalancing. Tracks 12 signals across geopolitical, monetary, and economic dimensions.",
+  "main": "src/agent.js",
+  "scripts": {
+    "start": "node src/agent.js",
+    "claude": "node src/agent.js --provider claude",
+    "openai": "node src/agent.js --provider openai",
+    "serve": "npx serve public -p 3000",
+    "dev": "npm run start && npm run serve"
+  },
+  "keywords": [
+    "macro",
+    "india",
+    "nifty",
+    "portfolio",
+    "rebalancing",
+    "claude",
+    "openai",
+    "dashboard"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "serve": "^14.2.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
