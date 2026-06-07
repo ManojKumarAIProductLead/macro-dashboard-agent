@@ -301,6 +301,71 @@ See `skills/SIGNAL_SKILL.md` for the complete framework.
 
 ---
 
+## Troubleshooting
+
+### ❌ "Rate limit exceeded" / 429 errors on multiple signals
+
+**Root cause:** The 12 signal calls each trigger a web search, which returns large result sets. Running them too quickly exceeds Anthropic's token-per-minute (TPM) limit for your tier.
+
+**What the fix does (already in `claude.js`):**
+- Uses `claude-haiku-4-5` for signal calls — Haiku has a 5× higher TPM limit than Sonnet
+- 6-second delay between each signal call
+- Exponential backoff: on a 429, waits 15s → 30s → 60s before retry (up to 3 retries)
+- Respects the `Retry-After` response header if present
+
+**If you're still hitting limits (free/low-tier API account):**
+
+Option 1 — Add longer delays:
+```bash
+# In src/providers/claude.js, increase BASE_DELAY_MS
+const BASE_DELAY_MS = 10000;  // 10s instead of 6s
+```
+
+Option 2 — Run signals in two batches manually:
+```bash
+# Edit src/agent.js temporarily to run signals 1–6, then 7–12
+```
+
+Option 3 — Upgrade your Anthropic tier:
+- Go to [console.anthropic.com/settings/billing](https://console.anthropic.com/settings/billing)
+- Adding $5 of credits moves you to Tier 1 (higher TPM limits)
+- Adding $40 total moves you to Tier 2
+
+**Rate limits by tier (as of 2026):**
+
+| Tier | Haiku TPM | Sonnet TPM |
+|------|-----------|------------|
+| Free | 20,000 | 10,000 |
+| Tier 1 | 50,000 | 40,000 |
+| Tier 2 | 100,000 | 80,000 |
+
+The agent uses Haiku for signal calls specifically because even Tier 1 Haiku (50K TPM) comfortably handles 12 calls at 6s spacing (~3–4K tokens each).
+
+---
+
+### ❌ "No text block in response" error
+
+The model used tool calls but didn't produce a final text response. Fix: increase `max_tokens` in `evaluateSignal()` from 512 to 1024.
+
+---
+
+### ❌ JSON parse error on a signal
+
+The model returned text that wasn't valid JSON. The agent logs the raw response — look for it in the console. Usually caused by the model adding a preamble. The compact prompt in the updated `claude.js` reduces this significantly.
+
+---
+
+### ⚠️ GitHub Actions failing
+
+Check: **Actions → Daily Macro Signal Refresh → View logs**
+
+Common causes:
+- `CLAUDE_API_KEY` secret not set → add it under Settings → Secrets → Actions
+- `AI_PROVIDER` variable not set → defaults to `claude` (correct)
+- GitHub Pages not enabled → Settings → Pages → Source → GitHub Actions
+
+---
+
 ## Contributing
 
 PRs welcome for:
