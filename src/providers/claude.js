@@ -1,43 +1,76 @@
 /**
  * Claude API provider
- * Uses claude-sonnet-4-20250514 with web_search tool to evaluate each macro signal
+ * Uses claude-sonnet-4-20250514 for all calls (signals + scenario analysis)
+ *
+ * Rate limit strategy:
+ *  - 12s base delay between signal calls -> ~2.5 min total, stays under 30K TPM
+ *  - Exponential backoff with jitter on 429 errors (up to 3 retries)
+ *  - Compact prompts to minimise input tokens per call
+ *  - Scenario analysis reuses same model (one call, no web search)
  */
 
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-sonnet-4-20250514";
+
+// Sonnet for all calls — signal evaluation + scenario analysis
+const SIGNAL_MODEL   = "claude-sonnet-4-20250514";
+const ANALYSIS_MODEL = "claude-sonnet-4-20250514";
+
+const BASE_DELAY_MS = 12000;  // 12s between signal calls (~2.5 min total for 12 signals)
+const MAX_RETRIES   = 3;      // retry up to 3x on 429
+const RETRY_BASE_MS = 20000;  // 20s base wait on first 429 retry (longer for Sonnet)
+
+/** Sleep helper */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** Jitter: adds +-20% randomness to avoid thundering herd */
+const jitter = ms => ms * (0.8 + Math.random() * 0.4);
 
 /**
- * Evaluate a single signal using Claude with web search
+ * Fetch wrapper with exponential backoff on 429
+ */
+async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url, options);
+
+    if (res.status === 429) {
+      if (attempt === retries) {
+        const body = await res.text();
+        throw new Error(`Rate limit exceeded after ${retries} retries: ${body}`);
+      }
+      // Respect Retry-After header if present, else exponential backoff
+      const retryAfter = res.headers.get("retry-after");
+      const waitMs = retryAfter
+        ? parseInt(retryAfter, 10) * 1000
+        : jitter(RETRY_BASE_MS * Math.pow(2, attempt));
+
+      console.warn(`\n  Waiting ${Math.round(waitMs / 1000)}s before retry ${attempt + 1}/${retries}...`);
+      await sleep(waitMs);
+      continue;
+    }
+
+    return res;
+  }
+}
+
+/**
+ * Evaluate a single signal using Sonnet + web search
+ * Compact prompt to minimise input tokens per call
  */
 async function evaluateSignal(signal, apiKey) {
-  const systemPrompt = `You are a macro financial analyst specialising in Indian markets and geopolitical risk. 
-You evaluate investment signal indicators to determine whether conditions are bullish (GREEN), neutral (AMBER), or bearish (RED) for Indian equity deployment.
-When you search the web, you look for the most recent data available.
-You MUST respond with ONLY a valid JSON object — no markdown, no preamble, no explanation outside the JSON.`;
+  const systemPrompt = `Macro analyst for Indian markets. Search web for latest data. Reply ONLY with valid JSON, no markdown.`;
 
-  const userPrompt = `Evaluate this macro signal for India portfolio management:
+  const userPrompt = `Signal: ${signal.name}
+Query: ${signal.searchQuery}
+GREEN if: ${signal.greenCondition}
+AMBER if: ${signal.amberCondition}
+RED if: ${signal.redCondition}
 
-Signal: ${signal.name}
-Threshold: ${signal.threshold}
-Context: ${signal.importance}
+Return ONLY this JSON (no other text):
+{"id":"${signal.id}","name":"${signal.name}","value":"current value","numericValue":null,"status":"RED","explanation":"1-2 sentences","source":"data source","fetchedAt":"${new Date().toISOString()}"}`;
 
-Instructions: ${signal.extractInstruction}
-
-Search for the latest data and return ONLY a JSON object in exactly this format:
-{
-  "id": "${signal.id}",
-  "name": "${signal.name}",
-  "value": "human-readable current value",
-  "numericValue": null,
-  "status": "RED",
-  "explanation": "1-2 sentence explanation of why this status",
-  "source": "where you found this data",
-  "fetchedAt": "${new Date().toISOString()}"
-}`;
-
-  const response = await fetch(CLAUDE_API_URL, {
+  const res = await fetchWithRetry(CLAUDE_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -46,34 +79,35 @@ Search for the latest data and return ONLY a JSON object in exactly this format:
       "anthropic-beta": "web-search-2025-03-05"
     },
     body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1024,
+      model: SIGNAL_MODEL,
+      max_tokens: 512,
       system: systemPrompt,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
       messages: [{ role: "user", content: userPrompt }]
     })
   });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Claude API error ${response.status}: ${err}`);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`API error ${res.status}: ${err}`);
   }
 
-  const data = await response.json();
-
-  // Extract text from response (may include tool use blocks)
+  const data = await res.json();
   const textBlock = data.content.find(b => b.type === "text");
-  if (!textBlock) throw new Error(`No text response for signal: ${signal.id}`);
+  if (!textBlock) throw new Error(`No text block in response for ${signal.id}`);
 
   const raw = textBlock.text.replace(/```json|```/g, "").trim();
   return JSON.parse(raw);
 }
 
 /**
- * Evaluate all signals using Claude
+ * Evaluate all 12 signals with per-call retry + inter-call delay
  */
 async function evaluateAllSignals(signals, apiKey, onProgress = null) {
   const results = [];
+
+  console.log(`  Model: ${SIGNAL_MODEL}`);
+  console.log(`  Inter-call delay: ${BASE_DELAY_MS / 1000}s | Max retries: ${MAX_RETRIES}\n`);
 
   for (let i = 0; i < signals.length; i++) {
     const signal = signals[i];
@@ -82,12 +116,14 @@ async function evaluateAllSignals(signals, apiKey, onProgress = null) {
     try {
       const result = await evaluateSignal(signal, apiKey);
       results.push(result);
+      const icon = result.status === "GREEN" ? "GREEN" : result.status === "AMBER" ? "AMBER" : "RED";
+      console.log(`  [${icon}] ${signal.name}: ${result.value}`);
     } catch (err) {
-      console.error(`Failed to evaluate ${signal.id}:`, err.message);
+      console.error(`\n  ERROR ${signal.name}: ${err.message}`);
       results.push({
         id: signal.id,
         name: signal.name,
-        value: "Error fetching",
+        value: "Fetch failed — check API key or rate limits",
         numericValue: null,
         status: "ERROR",
         explanation: err.message,
@@ -96,9 +132,8 @@ async function evaluateAllSignals(signals, apiKey, onProgress = null) {
       });
     }
 
-    // Rate limiting: 1 second between calls
     if (i < signals.length - 1) {
-      await new Promise(r => setTimeout(r, 1000));
+      await sleep(jitter(BASE_DELAY_MS));
     }
   }
 
@@ -106,14 +141,14 @@ async function evaluateAllSignals(signals, apiKey, onProgress = null) {
 }
 
 /**
- * Use Claude to generate scenario probability estimates based on signal results
+ * Scenario analysis — one Sonnet call, no web search
  */
 async function generateScenarioAnalysis(signalResults, apiKey) {
   const signalSummary = signalResults
-    .map(s => `${s.name}: ${s.status} — ${s.value} (${s.explanation})`)
+    .map(s => `${s.name}: ${s.status} | ${s.value}`)
     .join("\n");
 
-  const response = await fetch(CLAUDE_API_URL, {
+  const res = await fetchWithRetry(CLAUDE_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -121,30 +156,21 @@ async function generateScenarioAnalysis(signalResults, apiKey) {
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1024,
+      model: ANALYSIS_MODEL,
+      max_tokens: 800,
       messages: [{
         role: "user",
-        content: `Based on these current macro signal readings for the 2026 Middle East war / Hormuz crisis context:
-
-${signalSummary}
-
-Provide scenario probability estimates for the next 6 months for Indian equities (Nifty 50).
-
-Respond with ONLY valid JSON:
-{
-  "bull": { "probability": 15, "brent": "$72-82", "niftyDec": "27500-29000", "rationale": "..." },
-  "base": { "probability": 52, "brent": "$88-100", "niftyDec": "24000-26500", "rationale": "..." },
-  "bear": { "probability": 33, "brent": "$115-140", "niftyDec": "20000-22500", "rationale": "..." },
-  "keyRisks": ["risk1", "risk2", "risk3"],
-  "keyTailwinds": ["tw1", "tw2"],
-  "portfolioAction": "One sentence on recommended portfolio posture"
-}`
+        content: `India portfolio macro signals (2026 Middle East war context):\n${signalSummary}\n\nReturn ONLY JSON:\n{"bull":{"probability":15,"brent":"$72-82","niftyDec":"27500-29000","rationale":"..."},"base":{"probability":52,"brent":"$88-100","niftyDec":"24000-26500","rationale":"..."},"bear":{"probability":33,"brent":"$115-140","niftyDec":"20000-22500","rationale":"..."},"keyRisks":["r1","r2","r3"],"keyTailwinds":["t1","t2"],"portfolioAction":"one sentence"}`
       }]
     })
   });
 
-  const data = await response.json();
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Scenario API error ${res.status}: ${err}`);
+  }
+
+  const data = await res.json();
   const textBlock = data.content.find(b => b.type === "text");
   const raw = textBlock.text.replace(/```json|```/g, "").trim();
   return JSON.parse(raw);
