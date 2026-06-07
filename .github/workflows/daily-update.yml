@@ -1,47 +1,19 @@
-name: Daily Macro Signal Refresh
+name: Deploy Dashboard
 
 on:
-  workflow_dispatch: # Manual trigger only — dashboard updates are driven by the user's API key in the browser
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "public/**"
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
 jobs:
-  refresh-dashboard:
-    runs-on: ubuntu-latest
-    name: Refresh 12 Macro Signals
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run macro signal agent
-        env:
-          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'claude' }}
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: node src/agent.js
-
-      - name: Commit updated dashboard
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "Macro Dashboard Bot"
-          git add data/latest.json data/history.json public/index.html
-          git diff --staged --quiet || git commit -m "📊 Dashboard refresh: $(date +'%Y-%m-%d %H:%M IST')"
-          git push
-
   deploy-pages:
-    needs: refresh-dashboard
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -50,8 +22,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
