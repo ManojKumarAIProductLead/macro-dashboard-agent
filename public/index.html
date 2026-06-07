@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Macro Signal Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #F6F6F3;
+      color: #1a1a1a;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* ── Screens ── */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ── Setup screen ── */
+    .setup-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .setup-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px 36px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .setup-title { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+    .setup-sub { font-size: 13px; color: #777; margin-bottom: 28px; line-height: 1.5; }
+    .setup-label { font-size: 12px; font-weight: 500; color: #555; margin-bottom: 6px; display: block; }
+    .setup-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid #E0E0E0;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: 'DM Mono', monospace;
+      outline: none;
+      transition: border-color 0.15s;
+      margin-bottom: 6px;
+    }
+    .setup-input:focus { border-color: #1a1a1a; }
+    .setup-hint { font-size: 11px; color: #aaa; margin-bottom: 20px; line-height: 1.5; }
+    .btn-primary {
+      width: 100%;
+      background: #1a1a1a;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-primary:hover { background: #333; }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+    .setup-cached-link {
+      display: block;
+      text-align: center;
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 16px;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .setup-cached-link:hover { color: #555; }
+    .setup-error {
+      background: #FFF0EE;
+      color: #C0392B;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    /* ── Loading screen ── */
+    .loading-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .loading-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px 32px;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .loading-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+    .loading-sub { font-size: 12px; color: #999; margin-bottom: 20px; }
+    .progress-bar-wrap {
+      background: #F0F0EE;
+      border-radius: 6px;
+      height: 6px;
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #1a1a1a;
+      border-radius: 6px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .signal-list { display: flex; flex-direction: column; gap: 8px; }
+    .signal-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #F8F8F6;
+    }
+    .signal-item.active { background: #F0F0EE; }
+    .signal-item.done-green { background: #E6FAF3; }
+    .signal-item.done-amber { background: #FFF8E7; }
+    .signal-item.done-red { background: #FFF0EE; }
+    .signal-item.done-error { background: #F5F5F5; }
+    .signal-icon { font-size: 14px; width: 18px; text-align: center; flex-shrink: 0; }
+    .signal-name { flex: 1; color: #555; }
+    .signal-name.active { color: #1a1a1a; font-weight: 500; }
+    .signal-status-tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    /* ── Dashboard ── */
+    .header { margin-bottom: 24px; }
+    .title { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+    .subtitle { font-size: 13px; color: #888; margin-top: 4px; font-family: 'DM Mono', monospace; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .card { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .card-label { font-size: 11px; font-weight: 500; color: #999; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .score-num { font-size: 52px; font-weight: 300; font-family: 'DM Mono', monospace; line-height: 1; }
+    .score-denom { font-size: 24px; color: #bbb; font-family: 'DM Mono', monospace; }
+    .posture-label { font-size: 13px; font-weight: 600; margin-top: 8px; }
+    .action-text { font-size: 13px; color: #555; margin-top: 6px; line-height: 1.5; }
+    .provider-badge { font-size: 11px; font-family: 'DM Mono', monospace; background: #F0F0F0; padding: 3px 8px; border-radius: 4px; color: #666; }
+    .sc-prob { font-size: 32px; font-weight: 300; font-family: 'DM Mono', monospace; }
+    .sc-label { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+    .sc-detail { font-size: 11px; color: #666; margin-top: 4px; line-height: 1.4; }
+    .signal-section { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 14px; }
+    .risks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; margin: 3px 4px 3px 0; }
+    .tag-risk { background: #FFF0EE; color: #C0392B; }
+    .tag-tw { background: #E6FAF3; color: #0B5E38; }
+    .refresh-btn {
+      background: #1a1a1a;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 18px;
+      font-size: 13px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .refresh-btn:hover { background: #333; }
+    .breakdown-row { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+    .breakdown-item { font-size: 12px; display: flex; align-items: center; gap: 5px; }
+    .footer-row {
+      font-size: 12px;
+      color: #aaa;
+      text-align: center;
+      margin-top: 24px;
+      font-family: 'DM Mono', monospace;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .change-key-link { color: #aaa; cursor: pointer; text-decoration: underline; }
+    .change-key-link:hover { color: #555; }
+    @media (max-width: 600px) {
+      .grid-2, .grid-3, .risks-grid { grid-template-columns: 1fr; }
+      .score-num { font-size: 40px; }
+      .setup-card, .loading-card { padding: 28px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Screen 1: API Key Setup ── -->
+  <div id="screen-setup" class="screen active">
+    <div class="setup-wrap">
+      <div class="setup-card">
+        <div style="font-size:28px;margin-bottom:16px;">📊</div>
+        <h1 class="setup-title">Macro Signal Dashboard</h1>
+        <p class="setup-sub">India portfolio rebalancing framework — 12 live signals scored via Claude AI with real-time web search.</p>
+
+        <div id="setup-error" class="setup-error"></div>
+
+        <label class="setup-label" for="api-key-input">Claude API Key</label>
+        <input
+          id="api-key-input"
+          class="setup-input"
+          type="password"
+          placeholder="sk-ant-api03-..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <p class="setup-hint">
+          Your key is stored only in this browser (localStorage). It is sent directly to Anthropic — never to any other server.
+          Get a key at <strong>console.anthropic.com</strong>
+        </p>
+
+        <button id="run-btn" class="btn-primary">Run Analysis →</button>
+
+        <span id="view-cached-link" class="setup-cached-link" style="display:none;">
+          View cached results without refreshing
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Screen 2: Loading Progress ── -->
+  <div id="screen-loading" class="screen">
+    <div class="loading-wrap">
+      <div class="loading-card">
+        <h2 class="loading-title">Evaluating macro signals…</h2>
+        <p class="loading-sub" id="loading-status">Starting up — please keep this tab open.</p>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+        <div class="signal-list" id="signal-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Screen 3: Dashboard ── -->
+  <div id="screen-dashboard" class="screen">
+    <div class="container">
+      <div id="dashboard-content"></div>
+    </div>
+  </div>
+
+<script>
+// ─────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+const MODEL = 'claude-sonnet-4-5';
+
+const SIGNALS = [
+  {
+    id: 'brent_crude', name: 'Brent Crude Oil', category: 'energy',
+    threshold: '< $85/bbl',
+    extractInstruction: 'Extract the current Brent crude spot price in USD per barrel. Return a JSON object: { value: "$XXX/bbl", numericValue: XXX, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if below $85, AMBER if $85-$95, RED if above $95.',
+    importance: 'Primary trigger indicator. Single most important signal.'
+  },
+  {
+    id: 'hormuz_traffic', name: 'Strait of Hormuz Traffic', category: 'geopolitical',
+    threshold: '> 60% of normal',
+    extractInstruction: 'Find the current shipping traffic through the Strait of Hormuz as a percentage of normal pre-war levels. Return JSON: { value: "X%", numericValue: X, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if above 60%, AMBER if 20-60%, RED if below 20%.',
+    importance: 'Controls 20% of global oil trade.'
+  },
+  {
+    id: 'urea_price', name: 'NOLA Urea Price', category: 'commodity',
+    threshold: '< $450/mt',
+    extractInstruction: 'Find current NOLA (New Orleans) urea spot price in USD per metric ton. Return JSON: { value: "$XXX/mt", numericValue: XXX, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if below $450, AMBER if $450-$550, RED if above $550.',
+    importance: 'Food inflation leading indicator.'
+  },
+  {
+    id: 'dual_blockade', name: 'Dual Blockade Resolution', category: 'geopolitical',
+    threshold: 'Both blockades resolved',
+    extractInstruction: 'Assess status of: (1) US naval blockade on Iran, (2) Iran closure of Strait of Hormuz. Return JSON: { value: "descriptive status", numericValue: null, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if both resolved, AMBER if one resolved or partial, RED if both active.',
+    importance: 'Structural resolution signal.'
+  },
+  {
+    id: 'rbi_stance', name: 'RBI Monetary Stance', category: 'monetary',
+    threshold: 'Neutral or accommodative',
+    extractInstruction: 'Find the latest RBI MPC decision: repo rate, stance, and tone. Return JSON: { value: "X.XX% + stance", numericValue: X.XX, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if cutting rates. AMBER if holding neutral. RED if hiking or hawkish.',
+    importance: 'Domestic liquidity signal.'
+  },
+  {
+    id: 'fed_pivot', name: 'US Federal Reserve Pivot', category: 'monetary',
+    threshold: 'Easing or neutral language',
+    extractInstruction: 'Find the latest FOMC decision and inflation language. Return JSON: { value: "Rate + language summary", numericValue: null, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if cutting. AMBER if neutral hold. RED if hawkish hold.',
+    importance: 'Global risk-on/off signal.'
+  },
+  {
+    id: 'rbi_forex', name: 'RBI Forex Reserves', category: 'macro',
+    threshold: 'Stable or rising',
+    extractInstruction: 'Find current India forex reserves in USD billions and USD/INR rate. Return JSON: { value: "$XXXbn / ₹XX.XX", numericValue: null, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if stable/rising. AMBER if declining but manageable. RED if crisis-level decline.',
+    importance: 'Currency stability signal.'
+  },
+  {
+    id: 'fii_flows', name: 'FII Net Buying (3 weeks)', category: 'flows',
+    threshold: '3 consecutive weeks net buying',
+    extractInstruction: 'Find recent FII net flows in Indian equity markets. Return JSON: { value: "Net ₹XX cr (X weeks)", numericValue: null, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if 3+ weeks consecutive net buyers. AMBER if mixed. RED if consistent sellers.',
+    importance: 'Foreign sentiment signal.'
+  },
+  {
+    id: 'yield_curve', name: 'India Yield Curve Spread', category: 'macro',
+    threshold: '10yr–3yr spread > 60bps',
+    extractInstruction: 'Find India 10-year and 3-year government bond yields and calculate spread. Return JSON: { value: "10yr X% / 3yr X% / spread Xbps", numericValue: spread_bps, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if >60bps. AMBER if 30-60bps. RED if <30bps.',
+    importance: 'Credit/growth signal.'
+  },
+  {
+    id: 'nifty_eps', name: 'Nifty EPS Revisions', category: 'equity',
+    threshold: '2+ months upward revisions',
+    extractInstruction: 'Find trend in Nifty 50 EPS revisions from brokers. Return JSON: { value: "FY27E ₹XXX (direction)", numericValue: null, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if 2+ months upward. AMBER if flat/mixed. RED if cuts.',
+    importance: 'Equity fundamental signal.'
+  },
+  {
+    id: 'gst_collections', name: 'GST Collections', category: 'macro',
+    threshold: '> ₹1.8 lakh crore/month',
+    extractInstruction: 'Find latest monthly GST collection for India. Return JSON: { value: "₹X.XX lakh crore (Month)", numericValue: X.XX, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if above 1.8. AMBER if 1.6-1.8. RED if below 1.6.',
+    importance: 'Domestic demand proxy.'
+  },
+  {
+    id: 'manufacturing_pmi', name: 'India Manufacturing PMI', category: 'macro',
+    threshold: '> 54 for 2 consecutive months',
+    extractInstruction: 'Find latest India Manufacturing PMI reading. Return JSON: { value: "XX.X (Month)", numericValue: XX.X, status: "RED"|"AMBER"|"GREEN", explanation: "...", source: "..." }. GREEN if >54 for 2+ months. AMBER if 50-54. RED if below 50 or sustained below 54.',
+    importance: 'Real economy signal.'
+  }
+];
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let apiKey = localStorage.getItem('macroApiKey') || '';
+let cachedData = null;
+try { cachedData = JSON.parse(localStorage.getItem('macroDashboardData') || 'null'); } catch {}
+
+// ─────────────────────────────────────────────
+// SCREEN MANAGEMENT
+// ─────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ─────────────────────────────────────────────
+// API CALLS
+// ─────────────────────────────────────────────
+async function evaluateSignal(signal, key) {
+  const systemPrompt = `You are a macro financial analyst specialising in Indian markets and geopolitical risk.
+You evaluate investment signals to determine whether conditions are bullish (GREEN), neutral (AMBER), or bearish (RED) for Indian equity deployment.
+You MUST respond with ONLY a valid JSON object — no markdown, no preamble, no explanation outside the JSON.`;
+
+  const userPrompt = `Evaluate this macro signal for India portfolio management:
+
+Signal: ${signal.name}
+Threshold: ${signal.threshold}
+Context: ${signal.importance}
+
+${signal.extractInstruction}
+
+Search the web for the latest data. Return ONLY a JSON object:
+{
+  "id": "${signal.id}",
+  "name": "${signal.name}",
+  "value": "human-readable current value",
+  "numericValue": null,
+  "status": "RED",
+  "explanation": "1-2 sentence explanation",
+  "source": "where you found this",
+  "fetchedAt": "${new Date().toISOString()}"
+}`;
+
+  const res = await fetch(CLAUDE_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'web-search-2025-03-05',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1024,
+      system: systemPrompt,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [{ role: 'user', content: userPrompt }]
+    })
+  });
+
+  if (res.status === 401) throw new Error('Invalid API key. Please check and try again.');
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`API error ${res.status}: ${err}`);
+  }
+
+  const data = await res.json();
+  const textBlocks = data.content.filter(b => b.type === 'text');
+  if (!textBlocks.length) throw new Error('No text response from Claude');
+  const raw = textBlocks[textBlocks.length - 1].text.replace(/```json|```/g, '').trim();
+  return JSON.parse(raw);
+}
+
+async function generateScenarioAnalysis(signalResults, key) {
+  const summary = signalResults
+    .map(s => `${s.name}: ${s.status} — ${s.value} (${s.explanation})`)
+    .join('\n');
+
+  const res = await fetch(CLAUDE_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: `Based on these macro signal readings:
+
+${summary}
+
+Provide scenario probability estimates for Indian equities (Nifty 50) over the next 6 months.
+
+Respond with ONLY valid JSON:
+{
+  "bull": { "probability": 15, "brent": "$72-82", "niftyDec": "27500-29000", "rationale": "..." },
+  "base": { "probability": 52, "brent": "$88-100", "niftyDec": "24000-26500", "rationale": "..." },
+  "bear": { "probability": 33, "brent": "$115-140", "niftyDec": "20000-22500", "rationale": "..." },
+  "keyRisks": ["risk1", "risk2", "risk3"],
+  "keyTailwinds": ["tw1", "tw2"],
+  "portfolioAction": "One sentence on recommended portfolio posture"
+}`
+      }]
+    })
+  });
+
+  if (!res.ok) throw new Error('Scenario analysis failed');
+  const data = await res.json();
+  const textBlock = data.content.find(b => b.type === 'text');
+  const raw = textBlock.text.replace(/```json|```/g, '').trim();
+  return JSON.parse(raw);
+}
+
+// ─────────────────────────────────────────────
+// SCORING
+// ─────────────────────────────────────────────
+function scoreSignals(results) {
+  let score = 0;
+  const breakdown = { GREEN: [], AMBER: [], RED: [], ERROR: [] };
+  results.forEach(r => {
+    if (r.status === 'GREEN') { score++; breakdown.GREEN.push(r.id); }
+    else if (r.status === 'AMBER') breakdown.AMBER.push(r.id);
+    else if (r.status === 'RED') breakdown.RED.push(r.id);
+    else breakdown.ERROR.push(r.id);
+  });
+  return {
+    score, total: 12,
+    breakdown,
+    posture: score >= 9 ? 'FULL_DEPLOY' : score >= 6 ? 'PARTIAL_DEPLOY' : 'DEFENSIVE',
+    postureLabel: score >= 9 ? 'Full Deployment' : score >= 6 ? 'Partial Deployment (50%)' : 'Defensive — SIPs Only',
+    action: score >= 9
+      ? 'Rotate remaining 50% of arbitrage/short-duration FI into Indian equity.'
+      : score >= 6
+      ? 'Rotate 50% of arbitrage/short-duration FI into Indian equity lump sum.'
+      : 'Hold defensive. Run SIPs only. No lump sum equity.'
+  };
+}
+
+// ─────────────────────────────────────────────
+// PROGRESS UI
+// ─────────────────────────────────────────────
+function initProgressList() {
+  const list = document.getElementById('signal-list');
+  list.innerHTML = SIGNALS.map((s, i) => `
+    <div class="signal-item" id="sig-item-${i}">
+      <span class="signal-icon" id="sig-icon-${i}">⏳</span>
+      <span class="signal-name" id="sig-name-${i}">${s.name}</span>
+      <span class="signal-status-tag" id="sig-tag-${i}" style="display:none"></span>
+    </div>
+  `).join('');
+}
+
+function setSignalActive(i) {
+  document.getElementById(`sig-item-${i}`).classList.add('active');
+  document.getElementById(`sig-icon-${i}`).textContent = '🔄';
+  document.getElementById(`sig-name-${i}`).classList.add('active');
+  document.getElementById('loading-status').textContent =
+    `Evaluating signal ${i + 1} of ${SIGNALS.length}: ${SIGNALS[i].name}…`;
+  document.getElementById('progress-fill').style.width =
+    `${Math.round((i / SIGNALS.length) * 100)}%`;
+}
+
+function setSignalDone(i, status) {
+  const item = document.getElementById(`sig-item-${i}`);
+  item.classList.remove('active');
+  if (status === 'GREEN') { item.classList.add('done-green'); document.getElementById(`sig-icon-${i}`).textContent = '🟢'; }
+  else if (status === 'AMBER') { item.classList.add('done-amber'); document.getElementById(`sig-icon-${i}`).textContent = '🟡'; }
+  else if (status === 'RED') { item.classList.add('done-red'); document.getElementById(`sig-icon-${i}`).textContent = '🔴'; }
+  else { item.classList.add('done-error'); document.getElementById(`sig-icon-${i}`).textContent = '❌'; }
+
+  const tag = document.getElementById(`sig-tag-${i}`);
+  const colors = { GREEN: '#00B37E', AMBER: '#E6A817', RED: '#E54D2E', ERROR: '#888' };
+  const bgs = { GREEN: '#E6FAF3', AMBER: '#FFF8E7', RED: '#FFF0EE', ERROR: '#F5F5F5' };
+  tag.style.display = 'inline-block';
+  tag.style.color = colors[status] || '#888';
+  tag.style.background = bgs[status] || '#F5F5F5';
+  tag.textContent = status;
+  document.getElementById(`sig-name-${i}`).classList.remove('active');
+}
+
+// ─────────────────────────────────────────────
+// MAIN ANALYSIS RUNNER
+// ─────────────────────────────────────────────
+async function runAnalysis(key) {
+  showScreen('screen-loading');
+  initProgressList();
+  document.getElementById('loading-status').textContent = 'Starting analysis…';
+  document.getElementById('progress-fill').style.width = '0%';
+
+  const signalResults = [];
+
+  for (let i = 0; i < SIGNALS.length; i++) {
+    setSignalActive(i);
+    try {
+      const result = await evaluateSignal(SIGNALS[i], key);
+      signalResults.push(result);
+      setSignalDone(i, result.status);
+    } catch (err) {
+      if (err.message.includes('Invalid API key')) {
+        localStorage.removeItem('macroApiKey');
+        showSetupWithError(err.message);
+        return;
+      }
+      signalResults.push({
+        id: SIGNALS[i].id, name: SIGNALS[i].name,
+        value: 'Error fetching', numericValue: null,
+        status: 'ERROR', explanation: err.message,
+        source: 'N/A', fetchedAt: new Date().toISOString()
+      });
+      setSignalDone(i, 'ERROR');
+    }
+    if (i < SIGNALS.length - 1) await new Promise(r => setTimeout(r, 800));
+  }
+
+  document.getElementById('loading-status').textContent = 'Generating scenario analysis…';
+  document.getElementById('progress-fill').style.width = '95%';
+
+  let scenarioData = {};
+  try {
+    scenarioData = await generateScenarioAnalysis(signalResults, key);
+  } catch {
+    scenarioData = {
+      bull: { probability: 15, brent: '$72-82', niftyDec: '27,500-29,000', rationale: 'Full resolution scenario' },
+      base: { probability: 52, brent: '$88-100', niftyDec: '24,000-26,500', rationale: 'Managed standoff continues' },
+      bear: { probability: 33, brent: '$115-140', niftyDec: '20,000-22,500', rationale: 'Escalation / long standoff' },
+      keyRisks: [], keyTailwinds: [], portfolioAction: 'Stay defensive'
+    };
+  }
+
+  document.getElementById('progress-fill').style.width = '100%';
+
+  const scoreData = scoreSignals(signalResults);
+  const runData = {
+    timestamp: new Date().toISOString(),
+    provider: 'claude',
+    score: scoreData,
+    signals: signalResults,
+    scenarios: scenarioData
+  };
+
+  localStorage.setItem('macroDashboardData', JSON.stringify(runData));
+  cachedData = runData;
+
+  renderDashboard(runData);
+  showScreen('screen-dashboard');
+}
+
+// ─────────────────────────────────────────────
+// DASHBOARD RENDERER
+// ─────────────────────────────────────────────
+function statusColor(s) {
+  return s === 'GREEN' ? '#00B37E' : s === 'AMBER' ? '#E6A817' : s === 'RED' ? '#E54D2E' : '#888';
+}
+function statusBg(s) {
+  return s === 'GREEN' ? '#E6FAF3' : s === 'AMBER' ? '#FFF8E7' : s === 'RED' ? '#FFF0EE' : '#F5F5F5';
+}
+function postureColor(p) {
+  return p === 'FULL_DEPLOY' ? '#00B37E' : p === 'PARTIAL_DEPLOY' ? '#E6A817' : '#E54D2E';
+}
+
+function renderDashboard(data) {
+  const { timestamp, score: sd, signals, scenarios } = data;
+  const date = new Date(timestamp).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+
+  const signalRows = signals.map(s => `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid #f0f0f0;">
+      <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${statusColor(s.status)};margin-right:0;flex-shrink:0;margin-top:4px"></span>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">
+          <span style="font-size:13px;font-weight:500;color:#1a1a1a;">${s.name}</span>
+          <span style="font-size:12px;font-weight:600;color:${statusColor(s.status)};background:${statusBg(s.status)};padding:2px 8px;border-radius:4px;">${s.status}</span>
+        </div>
+        <div style="font-size:13px;color:#555;margin-top:2px;">${s.value}</div>
+        <div style="font-size:12px;color:#888;margin-top:2px;">${s.explanation}</div>
+      </div>
+    </div>`).join('');
+
+  const bull = scenarios.bull || {};
+  const base = scenarios.base || {};
+  const bear = scenarios.bear || {};
+
+  document.getElementById('dashboard-content').innerHTML = `
+    <div class="header">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h1 class="title">Macro Signal Dashboard</h1>
+          <p class="subtitle">India Portfolio Rebalancing · 12 Signals · Updated ${date}</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="provider-badge">via CLAUDE</span>
+          <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-label">Signal Score</div>
+        <div style="display:flex;align-items:flex-end;gap:4px;">
+          <span class="score-num" style="color:${postureColor(sd.posture)}">${sd.score}</span>
+          <span class="score-denom">/12</span>
+        </div>
+        <div class="breakdown-row">
+          <div class="breakdown-item"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#00B37E;"></span>${sd.breakdown.GREEN.length} Green</div>
+          <div class="breakdown-item"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#E6A817;"></span>${sd.breakdown.AMBER.length} Amber</div>
+          <div class="breakdown-item"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#E54D2E;"></span>${sd.breakdown.RED.length} Red</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Portfolio Posture</div>
+        <div class="posture-label" style="color:${postureColor(sd.posture)};font-size:15px;">${sd.postureLabel}</div>
+        <div class="action-text">${sd.action}</div>
+        <div style="margin-top:12px;font-size:11px;color:#aaa;">Rotate at 6/12 (50%) · Full deploy at 9/12</div>
+      </div>
+    </div>
+
+    <p style="font-size:11px;font-weight:500;color:#999;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Scenario Probabilities</p>
+    <div class="grid-3">
+      <div class="card" style="border-top:3px solid #00B37E;">
+        <div class="sc-label" style="color:#0B5E38;">🟢 Bull Case</div>
+        <div class="sc-prob">${bull.probability || 15}%</div>
+        <div class="sc-detail">Brent: ${bull.brent || '$72–82'}<br>Nifty Dec: ${bull.niftyDec || '27,500–29,000'}</div>
+        <div style="font-size:11px;color:#888;margin-top:8px;">${bull.rationale || 'Full resolution, Hormuz reopens'}</div>
+      </div>
+      <div class="card" style="border-top:3px solid #E6A817;">
+        <div class="sc-label" style="color:#7D5A00;">🟡 Base Case</div>
+        <div class="sc-prob">${base.probability || 52}%</div>
+        <div class="sc-detail">Brent: ${base.brent || '$88–100'}<br>Nifty Dec: ${base.niftyDec || '24,000–26,500'}</div>
+        <div style="font-size:11px;color:#888;margin-top:8px;">${base.rationale || 'Managed standoff continues'}</div>
+      </div>
+      <div class="card" style="border-top:3px solid #E54D2E;">
+        <div class="sc-label" style="color:#7B241C;">🔴 Bear Case</div>
+        <div class="sc-prob">${bear.probability || 33}%</div>
+        <div class="sc-detail">Brent: ${bear.brent || '$115–140'}<br>Nifty Dec: ${bear.niftyDec || '20,000–22,500'}</div>
+        <div style="font-size:11px;color:#888;margin-top:8px;">${bear.rationale || 'Escalation, long standoff'}</div>
+      </div>
+    </div>
+
+    <div class="signal-section">
+      <div class="card-label" style="margin-bottom:4px;">Signal Detail — All 12 Indicators</div>
+      ${signalRows}
+    </div>
+
+    ${(scenarios.keyRisks?.length || scenarios.keyTailwinds?.length) ? `
+    <div class="risks-grid">
+      <div class="card">
+        <div class="card-label">Key Risks</div>
+        <div>${(scenarios.keyRisks || []).map(r => `<span class="tag tag-risk">${r}</span>`).join('')}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Key Tailwinds</div>
+        <div>${(scenarios.keyTailwinds || []).map(t => `<span class="tag tag-tw">${t}</span>`).join('')}</div>
+      </div>
+    </div>` : ''}
+
+    <div class="footer-row">
+      <span>Macro Dashboard · Not financial advice</span>
+      <span id="change-key-link" class="change-key-link">Change API key</span>
+    </div>
+  `;
+
+  document.getElementById('refresh-btn').addEventListener('click', () => runAnalysis(apiKey));
+  document.getElementById('change-key-link').addEventListener('click', () => {
+    localStorage.removeItem('macroApiKey');
+    apiKey = '';
+    showSetupScreen();
+  });
+}
+
+// ─────────────────────────────────────────────
+// SETUP SCREEN HELPERS
+// ─────────────────────────────────────────────
+function showSetupScreen() {
+  showScreen('screen-setup');
+  const input = document.getElementById('api-key-input');
+  input.value = '';
+  document.getElementById('setup-error').style.display = 'none';
+
+  if (cachedData) {
+    document.getElementById('view-cached-link').style.display = 'block';
+  }
+}
+
+function showSetupWithError(msg) {
+  showScreen('screen-setup');
+  const errEl = document.getElementById('setup-error');
+  errEl.textContent = msg;
+  errEl.style.display = 'block';
+  document.getElementById('api-key-input').value = '';
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+document.getElementById('run-btn').addEventListener('click', async () => {
+  const input = document.getElementById('api-key-input').value.trim();
+  if (!input) {
+    const errEl = document.getElementById('setup-error');
+    errEl.textContent = 'Please enter your Claude API key.';
+    errEl.style.display = 'block';
+    return;
+  }
+  apiKey = input;
+  localStorage.setItem('macroApiKey', apiKey);
+  await runAnalysis(apiKey);
+});
+
+document.getElementById('api-key-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('run-btn').click();
+});
+
+document.getElementById('view-cached-link').addEventListener('click', () => {
+  if (cachedData) {
+    renderDashboard(cachedData);
+    showScreen('screen-dashboard');
+  }
+});
+
+// On load: if key + data cached, go straight to dashboard; if only key, go to setup pre-filled
+if (apiKey && cachedData) {
+  renderDashboard(cachedData);
+  showScreen('screen-dashboard');
+} else {
+  if (apiKey) {
+    document.getElementById('api-key-input').value = apiKey;
+  }
+  showScreen('screen-setup');
+  if (cachedData) {
+    document.getElementById('view-cached-link').style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>
